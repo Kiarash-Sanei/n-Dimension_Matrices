@@ -67,14 +67,28 @@ void fillNDMatrix(void *matrix, int *dimensions, int dimensionCount, int current
 }
 
 // Function to print an n-dimensional matrix in one line
-void printNDMatrix(void *matrix, int *dimensions, int dimensionCount, int currentDimension)
+void printNDMatrix(void *matrix, int *dimensions, int dimensionCount, int currentDimension, int *coordinates)
 {
+    if (matrix == NULL)
+    {
+        printf("Error: Null matrix pointer\n");
+        return;
+    }
+
     if (currentDimension == dimensionCount - 1)
     {
-        // Base case: print the elements of the innermost dimension
+        // Base case: print the elements of the innermost dimension with coordinates
         for (int i = 0; i < *(dimensions + currentDimension); i++)
         {
-            printf("%d ", *((int *)matrix + i));
+            coordinates[currentDimension] = i;
+            printf("(");
+            for (int j = 0; j < dimensionCount; j++)
+            {
+                printf("%d", coordinates[j] + 1);
+                if (j < dimensionCount - 1)
+                    printf(",");
+            }
+            printf("): %d\n", *((int *)matrix + i));
         }
         return;
     }
@@ -82,7 +96,14 @@ void printNDMatrix(void *matrix, int *dimensions, int dimensionCount, int curren
     // Recursively print sub-matrices
     for (int i = 0; i < *(dimensions + currentDimension); i++)
     {
-        printNDMatrix(*(((void **)matrix) + i), dimensions, dimensionCount, currentDimension + 1);
+        coordinates[currentDimension] = i;
+        void *subMatrix = *(((void **)matrix) + i);
+        if (subMatrix == NULL)
+        {
+            printf("Error: Null sub-matrix pointer at dimension %d, index %d\n", currentDimension, i);
+            return;
+        }
+        printNDMatrix(subMatrix, dimensions, dimensionCount, currentDimension + 1, coordinates);
     }
 }
 
@@ -106,59 +127,138 @@ void linearOperation(void *A, void *B, void *C, int *dimensions, int dimensionCo
     }
 }
 
+// Helper function to flatten the old matrix
+void flattenMatrix(void *m, int *dims, int count, int current, int *tempArr, int *idx)
+{
+    if (current == count - 1)
+    {
+        // Base case: copy elements to tempArray
+        for (int i = 0; i < *(dims + current); i++)
+        {
+            *(tempArr + *idx) = *((int *)m + i);
+            (*idx)++;
+        }
+        return;
+    }
+
+    // Recursively flatten sub-matrices
+    for (int i = 0; i < *(dims + current); i++)
+    {
+        flattenMatrix(*(((void **)m) + i), dims, count, current + 1, tempArr, idx);
+    }
+}
+
+// Fill the new matrix with transposed data
+void fillTransposed(int depth, int *indices, int dimensionCount, int dim1, int dim2, int *dimensions, int *tempArray, void *newMatrix)
+{
+    if (depth == dimensionCount)
+    {
+        int oldIndex = 0, factor = 1;
+        for (int j = dimensionCount - 1; j >= 0; j--)
+        {
+            oldIndex += indices[j] * factor;
+            factor *= (j == dim1) ? dimensions[dim2] : (j == dim2) ? dimensions[dim1]
+                                                                   : dimensions[j];
+        }
+
+        int newIndex = 0, newFactor = 1;
+        for (int j = dimensionCount - 1; j >= 0; j--)
+        {
+            newIndex += indices[j] * newFactor;
+            newFactor *= dimensions[j];
+        }
+
+        // Use memcpy to copy the integer value
+        memcpy((char *)newMatrix + newIndex * sizeof(int), &tempArray[oldIndex], sizeof(int));
+        return;
+    }
+    for (int i = 0; i < dimensions[depth]; i++)
+    {
+        indices[depth] = i;
+        fillTransposed(depth + 1, indices, dimensionCount, dim1, dim2, dimensions, tempArray, newMatrix);
+    }
+}
+
 // Function to transpose two dimensions of a matrix
 void transpose(void *matrix, int *dimensions, int dimensionCount, int dim1, int dim2)
 {
-    // Swap the dimensions using XOR swap
-    *(dimensions + dim1) ^= *(dimensions + dim2);
-    *(dimensions + dim2) ^= *(dimensions + dim1);
-    *(dimensions + dim1) ^= *(dimensions + dim2);
+    // Swap the dimensions
+    int temp = dimensions[dim1];
+    dimensions[dim1] = dimensions[dim2];
+    dimensions[dim2] = temp;
 
-    // Create a new matrix with swapped dimensions
-    void *newMatrix = createNDMatrix(dimensions, dimensionCount, 0);
-
-    // Helper function to copy elements with transposed dimensions
-    void copyTransposed(void *src, void *dest, int *dims, int count, int current, int d1, int d2, int *indices)
+    // Calculate total number of elements
+    int totalElements = 1;
+    for (int i = 0; i < dimensionCount; i++)
     {
-        if (current == count)
-        {
-            // Base case: copy the element
-            int *srcElem = (int *)src;
-            int *destElem = (int *)dest;
-            for (int i = 0; i < count; i++)
-            {
-                if (i == d1)
-                    srcElem = *(((void **)srcElem) + *(indices + d2));
-                else if (i == d2)
-                    srcElem = *(((void **)srcElem) + *(indices + d1));
-                else
-                    srcElem = *(((void **)srcElem) + *(indices + i));
+        totalElements *= dimensions[i];
+    }
 
-                if (i == d1)
-                    destElem = *(((void **)destElem) + *(indices + d2));
-                else if (i == d2)
-                    destElem = *(((void **)destElem) + *(indices + d1));
+    // Create temporary arrays to hold all elements
+    int *tempArray = (int *)malloc(totalElements * sizeof(int));
+    int *newMatrix = (int *)malloc(totalElements * sizeof(int));
+    int index = 0;
+
+    // Flatten the matrix into tempArray
+    flattenMatrix(*(void **)matrix, dimensions, dimensionCount, 0, tempArray, &index);
+
+    // Fill the new matrix with transposed data
+    void fillTransposed(int depth, int *indices)
+    {
+        if (depth == dimensionCount)
+        {
+            int oldIndex = 0, newIndex = 0;
+            int oldFactor = 1, newFactor = 1;
+            for (int j = dimensionCount - 1; j >= 0; j--)
+            {
+                if (j == dim1)
+                {
+                    oldIndex += indices[dim2] * oldFactor;
+                    newIndex += indices[dim1] * newFactor;
+                }
+                else if (j == dim2)
+                {
+                    oldIndex += indices[dim1] * oldFactor;
+                    newIndex += indices[dim2] * newFactor;
+                }
                 else
-                    destElem = *(((void **)destElem) + *(indices + i));
+                {
+                    oldIndex += indices[j] * oldFactor;
+                    newIndex += indices[j] * newFactor;
+                }
+                oldFactor *= (j == dim1) ? dimensions[dim2] : (j == dim2) ? dimensions[dim1] : dimensions[j];
+                newFactor *= dimensions[j];
             }
-            *destElem = *srcElem;
+            newMatrix[newIndex] = tempArray[oldIndex];
             return;
         }
 
-        // Recursively copy elements
-        for (*(indices + current) = 0; *(indices + current) < *(dims + current); (*(indices + current))++)
+        for (int i = 0; i < dimensions[depth]; i++)
         {
-            copyTransposed(src, dest, dims, count, current + 1, d1, d2, indices);
+            indices[depth] = i;
+            fillTransposed(depth + 1, indices);
         }
     }
 
     int *indices = (int *)calloc(dimensionCount, sizeof(int));
-    copyTransposed(matrix, newMatrix, dimensions, dimensionCount, 0, dim1, dim2, indices);
+    fillTransposed(0, indices);
+
+    // Free resources
+    free(tempArray);
     free(indices);
 
-    // Copy the transposed matrix back to the original
-    memcpy(matrix, newMatrix, sizeof(void *) * *(dimensions + 0));
-    freeNDMatrix(newMatrix, dimensions, dimensionCount, 0);
+    // Free the old matrix structure
+    freeNDMatrix(*(void **)matrix, dimensions, dimensionCount, 0);
+
+    // Create a new matrix structure and fill it with the transposed data
+    void *newMatrixStructure = createNDMatrix(dimensions, dimensionCount, 0);
+    fillNDMatrix(newMatrixStructure, dimensions, dimensionCount, 0, newMatrix);
+
+    // Replace the old matrix with the new one
+    *(void **)matrix = newMatrixStructure;
+
+    // Free the flat newMatrix array
+    free(newMatrix);
 }
 
 // Function to reshape the matrix
@@ -175,28 +275,7 @@ void reshape(void *matrix, int *oldDimensions, int *newDimensions, int oldDimens
     int *tempArray = (int *)malloc(totalElements * sizeof(int));
     int index = 0;
 
-    // Helper function to flatten the old matrix
-    void flattenMatrix(void *m, int *dims, int count, int current)
-    {
-        if (current == count - 1)
-        {
-            // Base case: copy elements to tempArray
-            for (int i = 0; i < *(dims + current); i++)
-            {
-                *(tempArray + index) = *((int *)m + i);
-                index++;
-            }
-            return;
-        }
-
-        // Recursively flatten sub-matrices
-        for (int i = 0; i < *(dims + current); i++)
-        {
-            flattenMatrix(*(((void **)m) + i), dims, count, current + 1);
-        }
-    }
-
-    flattenMatrix(matrix, oldDimensions, oldDimensionCount, 0);
+    flattenMatrix(matrix, oldDimensions, oldDimensionCount, 0, tempArray, &index);
 
     // Create new matrix with new dimensions
     void *newMatrix = createNDMatrix(newDimensions, newDimensionCount, 0);
@@ -205,11 +284,16 @@ void reshape(void *matrix, int *oldDimensions, int *newDimensions, int oldDimens
     fillNDMatrix(newMatrix, newDimensions, newDimensionCount, 0, tempArray);
 
     // Copy the new matrix back to the original pointer
-    memcpy(matrix, newMatrix, sizeof(void *) * *(newDimensions + 0));
+    void **matrixPtr = (void **)matrix;
+    void **newMatrixPtr = (void **)newMatrix;
+    for (int i = 0; i < *(newDimensions + 0); i++)
+    {
+        *(matrixPtr + i) = *(newMatrixPtr + i);
+    }
 
     // Clean up
     free(tempArray);
-    freeNDMatrix(newMatrix, newDimensions, newDimensionCount, 0);
+    free(newMatrix);
 }
 
 int main()
@@ -255,8 +339,7 @@ int main()
     for (int i = 0; i < operationCount; i++)
     {
         char operation;
-        scanf("%c ", &operation);
-
+        scanf("\n%c ", &operation);
         if (operation == 'L')
         {
             // Linear operation
@@ -279,18 +362,16 @@ int main()
         else if (operation == 'T')
         {
             // Transpose operation
-            int targetMatrix, dim1, dim2;
-            scanf("%d %d %d", &targetMatrix, &dim1, &dim2);
+            int dim1, dim2;
+            scanf("%d %d", &dim1, &dim2);
+
+            // Adjust for 0-based indexing
             dim1--;
-            dim2--; // Adjust for 0-based indexing
-            if (targetMatrix == 1)
-            {
-                transpose(matrix1, dimensions, dimensionCount, dim1, dim2);
-            }
-            else
-            {
-                transpose(matrix2, dimensions, dimensionCount, dim1, dim2);
-            }
+            dim2--;
+
+            // Perform the transpose operation
+            transpose(&matrix1, dimensions, dimensionCount, dim1, dim2);
+            transpose(&matrix2, dimensions, dimensionCount, dim1, dim2);
         }
         else if (operation == 'R')
         {
@@ -308,17 +389,19 @@ int main()
             dimensions = newDimensions;
             dimensionCount = newDimensionCount;
         }
-        printNDMatrix(matrix1, dimensions, dimensionCount, 0);
-        printf("\n");
-        printNDMatrix(matrix2, dimensions, dimensionCount, 0);
-        printf("\n");
     }
 
-    // Print results
-    printNDMatrix(matrix1, dimensions, dimensionCount, 0);
-    printf("\n");
-    printNDMatrix(matrix2, dimensions, dimensionCount, 0);
-    printf("\n");
+    // Allocate and initialize coordinates array
+    int *coordinates = (int *)calloc(dimensionCount, sizeof(int));
+
+    // Print results with coordinates
+    printf("Matrix 1:\n");
+    printNDMatrix(matrix1, dimensions, dimensionCount, 0, coordinates);
+    printf("\nMatrix 2:\n");
+    printNDMatrix(matrix2, dimensions, dimensionCount, 0, coordinates);
+
+    // Free coordinates array
+    free(coordinates);
 
     // Clean up
     freeNDMatrix(matrix1, dimensions, dimensionCount, 0);
