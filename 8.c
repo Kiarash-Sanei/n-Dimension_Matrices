@@ -168,8 +168,8 @@ void fillTransposed(int depth, int *indices, int dimensionCount, int dim1, int d
             newFactor *= dimensions[j];
         }
 
-        // Use memcpy to copy the integer value
-        memcpy((char *)newMatrix + newIndex * sizeof(int), &tempArray[oldIndex], sizeof(int));
+        // Directly assign the integer value
+        *((int *)newMatrix + newIndex) = tempArray[oldIndex];
         return;
     }
     for (int i = 0; i < dimensions[depth]; i++)
@@ -226,7 +226,8 @@ void transpose(void *matrix, int *dimensions, int dimensionCount, int dim1, int 
                     oldIndex += indices[j] * oldFactor;
                     newIndex += indices[j] * newFactor;
                 }
-                oldFactor *= (j == dim1) ? dimensions[dim2] : (j == dim2) ? dimensions[dim1] : dimensions[j];
+                oldFactor *= (j == dim1) ? dimensions[dim2] : (j == dim2) ? dimensions[dim1]
+                                                                          : dimensions[j];
                 newFactor *= dimensions[j];
             }
             newMatrix[newIndex] = tempArray[oldIndex];
@@ -397,7 +398,7 @@ int main()
     // Print results with coordinates
     printf("Matrix 1:\n");
     printNDMatrix(matrix1, dimensions, dimensionCount, 0, coordinates);
-    printf("\nMatrix 2:\n");
+    printf("Matrix 2:\n");
     printNDMatrix(matrix2, dimensions, dimensionCount, 0, coordinates);
 
     // Free coordinates array
