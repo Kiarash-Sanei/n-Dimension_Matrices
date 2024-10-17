@@ -69,12 +69,6 @@ void fillNDMatrix(void *matrix, int *dimensions, int dimensionCount, int current
 // Function to print an n-dimensional matrix in one line
 void printNDMatrix(void *matrix, int *dimensions, int dimensionCount, int currentDimension, int *coordinates)
 {
-    if (matrix == NULL)
-    {
-        printf("Error: Null matrix pointer\n");
-        return;
-    }
-
     if (currentDimension == dimensionCount - 1)
     {
         // Base case: print the elements of the innermost dimension with coordinates
@@ -98,11 +92,6 @@ void printNDMatrix(void *matrix, int *dimensions, int dimensionCount, int curren
     {
         coordinates[currentDimension] = i;
         void *subMatrix = *(((void **)matrix) + i);
-        if (subMatrix == NULL)
-        {
-            printf("Error: Null sub-matrix pointer at dimension %d, index %d\n", currentDimension, i);
-            return;
-        }
         printNDMatrix(subMatrix, dimensions, dimensionCount, currentDimension + 1, coordinates);
     }
 }
@@ -148,44 +137,23 @@ void flattenMatrix(void *m, int *dims, int count, int current, int *tempArr, int
     }
 }
 
-// Fill the new matrix with transposed data
-void fillTransposed(int depth, int *indices, int dimensionCount, int dim1, int dim2, int *dimensions, int *tempArray, void *newMatrix)
+// Helper function to get element from n-dimensional matrix
+void *getElement(void *matrix, int *coords, int *dimensions, int dimensionCount)
 {
-    if (depth == dimensionCount)
+    for (int i = 0; i < dimensionCount - 1; i++)
     {
-        int oldIndex = 0, factor = 1;
-        for (int j = dimensionCount - 1; j >= 0; j--)
-        {
-            oldIndex += indices[j] * factor;
-            factor *= (j == dim1) ? dimensions[dim2] : (j == dim2) ? dimensions[dim1]
-                                                                   : dimensions[j];
-        }
-
-        int newIndex = 0, newFactor = 1;
-        for (int j = dimensionCount - 1; j >= 0; j--)
-        {
-            newIndex += indices[j] * newFactor;
-            newFactor *= dimensions[j];
-        }
-
-        // Directly assign the integer value
-        *((int *)newMatrix + newIndex) = tempArray[oldIndex];
-        return;
+        matrix = ((void **)matrix)[coords[i]];
     }
-    for (int i = 0; i < dimensions[depth]; i++)
-    {
-        indices[depth] = i;
-        fillTransposed(depth + 1, indices, dimensionCount, dim1, dim2, dimensions, tempArray, newMatrix);
-    }
+    return (int *)matrix + coords[dimensionCount - 1];
 }
 
-// Function to transpose two dimensions of a matrix
-void transpose(void *matrix, int *dimensions, int dimensionCount, int dim1, int dim2)
+// Function to transpose the first two dimensions of a matrix
+void transpose(void **matrix1, void **matrix2, int *dimensions, int dimensionCount)
 {
-    // Swap the dimensions
-    int temp = dimensions[dim1];
-    dimensions[dim1] = dimensions[dim2];
-    dimensions[dim2] = temp;
+    if (dimensionCount < 2)
+    {
+        return;
+    }
 
     // Calculate total number of elements
     int totalElements = 1;
@@ -194,72 +162,61 @@ void transpose(void *matrix, int *dimensions, int dimensionCount, int dim1, int 
         totalElements *= dimensions[i];
     }
 
-    // Create temporary arrays to hold all elements
-    int *tempArray = (int *)malloc(totalElements * sizeof(int));
-    int *newMatrix = (int *)malloc(totalElements * sizeof(int));
-    int index = 0;
-
-    // Flatten the matrix into tempArray
-    flattenMatrix(*(void **)matrix, dimensions, dimensionCount, 0, tempArray, &index);
-
-    // Fill the new matrix with transposed data
-    void fillTransposed(int depth, int *indices)
+    // Create new matrices with swapped dimensions
+    int newDimensions[dimensionCount];
+    newDimensions[0] = dimensions[1];
+    newDimensions[1] = dimensions[0];
+    for (int i = 2; i < dimensionCount; i++)
     {
-        if (depth == dimensionCount)
-        {
-            int oldIndex = 0, newIndex = 0;
-            int oldFactor = 1, newFactor = 1;
-            for (int j = dimensionCount - 1; j >= 0; j--)
-            {
-                if (j == dim1)
-                {
-                    oldIndex += indices[dim2] * oldFactor;
-                    newIndex += indices[dim1] * newFactor;
-                }
-                else if (j == dim2)
-                {
-                    oldIndex += indices[dim1] * oldFactor;
-                    newIndex += indices[dim2] * newFactor;
-                }
-                else
-                {
-                    oldIndex += indices[j] * oldFactor;
-                    newIndex += indices[j] * newFactor;
-                }
-                oldFactor *= (j == dim1) ? dimensions[dim2] : (j == dim2) ? dimensions[dim1]
-                                                                          : dimensions[j];
-                newFactor *= dimensions[j];
-            }
-            newMatrix[newIndex] = tempArray[oldIndex];
-            return;
-        }
-
-        for (int i = 0; i < dimensions[depth]; i++)
-        {
-            indices[depth] = i;
-            fillTransposed(depth + 1, indices);
-        }
+        newDimensions[i] = dimensions[i];
     }
 
-    int *indices = (int *)calloc(dimensionCount, sizeof(int));
-    fillTransposed(0, indices);
+    void *newMatrix1 = createNDMatrix(newDimensions, dimensionCount, 0);
+    void *newMatrix2 = createNDMatrix(newDimensions, dimensionCount, 0);
 
-    // Free resources
-    free(tempArray);
-    free(indices);
+    // Perform transposition
+    int *oldCoords = (int *)calloc(dimensionCount, sizeof(int));
+    int *newCoords = (int *)calloc(dimensionCount, sizeof(int));
 
-    // Free the old matrix structure
-    freeNDMatrix(*(void **)matrix, dimensions, dimensionCount, 0);
+    for (int i = 0; i < totalElements; i++)
+    {
+        // Calculate old coordinates
+        int temp = i;
+        for (int j = dimensionCount - 1; j >= 0; j--)
+        {
+            oldCoords[j] = temp % dimensions[j];
+            temp /= dimensions[j];
+        }
 
-    // Create a new matrix structure and fill it with the transposed data
-    void *newMatrixStructure = createNDMatrix(dimensions, dimensionCount, 0);
-    fillNDMatrix(newMatrixStructure, dimensions, dimensionCount, 0, newMatrix);
+        // Calculate new coordinates 
+        temp = i;
+        for (int j = dimensionCount - 1; j >= 0; j--)
+        {
+            newCoords[j] = temp % newDimensions[j];
+            temp /= newDimensions[j];
+        }
 
-    // Replace the old matrix with the new one
-    *(void **)matrix = newMatrixStructure;
+        // Copy values to new matrices
+        int oldValue1 = *((int *)getElement(*matrix1, oldCoords, dimensions, dimensionCount));
+        int oldValue2 = *((int *)getElement(*matrix2, oldCoords, dimensions, dimensionCount));
 
-    // Free the flat newMatrix array
-    free(newMatrix);
+        *((int *)getElement(newMatrix1, newCoords, newDimensions, dimensionCount)) = oldValue1;
+        *((int *)getElement(newMatrix2, newCoords, newDimensions, dimensionCount)) = oldValue2;
+    }
+
+    // Free old matrices and update pointers
+    freeNDMatrix(*matrix1, dimensions, dimensionCount, 0);
+    freeNDMatrix(*matrix2, dimensions, dimensionCount, 0);
+    *matrix1 = newMatrix1;
+    *matrix2 = newMatrix2;
+
+    // Update dimensions
+    dimensions[0] = newDimensions[0];
+    dimensions[1] = newDimensions[1];
+
+    // Free temporary arrays
+    free(oldCoords);
+    free(newCoords);
 }
 
 // Function to reshape the matrix
@@ -340,7 +297,7 @@ int main()
     for (int i = 0; i < operationCount; i++)
     {
         char operation;
-        scanf("\n%c ", &operation);
+        scanf("\n%c", &operation);
         if (operation == 'L')
         {
             // Linear operation
@@ -362,17 +319,8 @@ int main()
         }
         else if (operation == 'T')
         {
-            // Transpose operation
-            int dim1, dim2;
-            scanf("%d %d", &dim1, &dim2);
-
-            // Adjust for 0-based indexing
-            dim1--;
-            dim2--;
-
-            // Perform the transpose operation
-            transpose(&matrix1, dimensions, dimensionCount, dim1, dim2);
-            transpose(&matrix2, dimensions, dimensionCount, dim1, dim2);
+            // Transpose operation for both matrices
+            transpose(&matrix1, &matrix2, dimensions, dimensionCount);
         }
         else if (operation == 'R')
         {
