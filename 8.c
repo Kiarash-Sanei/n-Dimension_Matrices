@@ -97,14 +97,14 @@ void printNDMatrix(void *matrix, int *dimensions, int dimensionCount, int curren
 }
 
 // Function to perform linear operation C = αA + βB
-void linearOperation(void *A, void *B, void *C, int *dimensions, int dimensionCount, int currentDimension, double alpha, double beta)
+void linearOperation(void *A, void *B, void *C, int *dimensions, int dimensionCount, int currentDimension, int alpha, int beta)
 {
     if (currentDimension == dimensionCount - 1)
     {
         // Base case: perform the operation on the innermost dimension
         for (int i = 0; i < *(dimensions + currentDimension); i++)
         {
-            *((int *)C + i) = alpha * (*((int *)A + i)) + beta * (*((int *)B + i));
+            *((int *)C + i) = (alpha * (*((int *)A + i)) + beta * (*((int *)B + i))) % 100;
         }
         return;
     }
@@ -113,27 +113,6 @@ void linearOperation(void *A, void *B, void *C, int *dimensions, int dimensionCo
     for (int i = 0; i < *(dimensions + currentDimension); i++)
     {
         linearOperation(*(((void **)A) + i), *(((void **)B) + i), *(((void **)C) + i), dimensions, dimensionCount, currentDimension + 1, alpha, beta);
-    }
-}
-
-// Helper function to flatten the old matrix
-void flattenMatrix(void *m, int *dims, int count, int current, int *tempArr, int *idx)
-{
-    if (current == count - 1)
-    {
-        // Base case: copy elements to tempArray
-        for (int i = 0; i < *(dims + current); i++)
-        {
-            *(tempArr + *idx) = *((int *)m + i);
-            (*idx)++;
-        }
-        return;
-    }
-
-    // Recursively flatten sub-matrices
-    for (int i = 0; i < *(dims + current); i++)
-    {
-        flattenMatrix(*(((void **)m) + i), dims, count, current + 1, tempArr, idx);
     }
 }
 
@@ -188,7 +167,7 @@ void transpose(void **matrix1, void **matrix2, int *dimensions, int dimensionCou
             temp /= dimensions[j];
         }
 
-        // Calculate new coordinates 
+        // Calculate new coordinates
         temp = i;
         for (int j = dimensionCount - 1; j >= 0; j--)
         {
@@ -220,38 +199,84 @@ void transpose(void **matrix1, void **matrix2, int *dimensions, int dimensionCou
 }
 
 // Function to reshape the matrix
-void reshape(void *matrix, int *oldDimensions, int *newDimensions, int oldDimensionCount, int newDimensionCount)
+void reshape(void **matrix, int *oldDimensions, int *newDimensions, int oldDimensionCount, int newDimensionCount)
 {
     // Calculate total number of elements
     int totalElements = 1;
     for (int i = 0; i < oldDimensionCount; i++)
     {
-        totalElements *= *(oldDimensions + i);
+        totalElements *= oldDimensions[i];
     }
-
-    // Create a temporary array to store flattened matrix
-    int *tempArray = (int *)malloc(totalElements * sizeof(int));
-    int index = 0;
-
-    flattenMatrix(matrix, oldDimensions, oldDimensionCount, 0, tempArray, &index);
 
     // Create new matrix with new dimensions
     void *newMatrix = createNDMatrix(newDimensions, newDimensionCount, 0);
 
-    // Fill the new matrix
-    fillNDMatrix(newMatrix, newDimensions, newDimensionCount, 0, tempArray);
-
-    // Copy the new matrix back to the original pointer
-    void **matrixPtr = (void **)matrix;
-    void **newMatrixPtr = (void **)newMatrix;
-    for (int i = 0; i < *(newDimensions + 0); i++)
+    // If reshaping to 1D, we can simply copy all elements
+    if (newDimensionCount == 1)
     {
-        *(matrixPtr + i) = *(newMatrixPtr + i);
+        int *newArray = (int *)newMatrix;
+        int index = 0;
+
+        // Helper function to copy elements recursively
+        void copyElements(void *subMatrix, int depth)
+        {
+            if (depth == oldDimensionCount - 1)
+            {
+                for (int i = 0; i < oldDimensions[depth]; i++)
+                {
+                    newArray[index++] = ((int *)subMatrix)[i];
+                }
+            }
+            else
+            {
+                for (int i = 0; i < oldDimensions[depth]; i++)
+                {
+                    copyElements(((void **)subMatrix)[i], depth + 1);
+                }
+            }
+        }
+
+        copyElements(*matrix, 0);
+    }
+    else
+    {
+        // Copy elements from old matrix to new matrix
+        int *oldCoords = (int *)calloc(oldDimensionCount, sizeof(int));
+        int *newCoords = (int *)calloc(newDimensionCount, sizeof(int));
+
+        for (int i = 0; i < totalElements; i++)
+        {
+            // Calculate old coordinates
+            int temp = i;
+            for (int j = oldDimensionCount - 1; j >= 0; j--)
+            {
+                oldCoords[j] = temp % oldDimensions[j];
+                temp /= oldDimensions[j];
+            }
+
+            // Calculate new coordinates
+            temp = i;
+            for (int j = newDimensionCount - 1; j >= 0; j--)
+            {
+                newCoords[j] = temp % newDimensions[j];
+                temp /= newDimensions[j];
+            }
+
+            // Copy value from old matrix to new matrix
+            int value = *((int *)getElement(*matrix, oldCoords, oldDimensions, oldDimensionCount));
+            *((int *)getElement(newMatrix, newCoords, newDimensions, newDimensionCount)) = value;
+        }
+
+        // Free temporary arrays
+        free(oldCoords);
+        free(newCoords);
     }
 
-    // Clean up
-    free(tempArray);
-    free(newMatrix);
+    // Free the old matrix structure
+    freeNDMatrix(*matrix, oldDimensions, oldDimensionCount, 0);
+
+    // Update the matrix pointer to point to the new matrix
+    *matrix = newMatrix;
 }
 
 int main()
@@ -301,9 +326,8 @@ int main()
         if (operation == 'L')
         {
             // Linear operation
-            int targetMatrix;
-            double alpha, beta;
-            scanf("%d %lf %lf", &targetMatrix, &alpha, &beta);
+            int targetMatrix, alpha, beta;
+            scanf("%d %d %d", &targetMatrix, &alpha, &beta);
             void *result = createNDMatrix(dimensions, dimensionCount, 0);
             linearOperation(matrix1, matrix2, result, dimensions, dimensionCount, 0, alpha, beta);
             if (targetMatrix == 1)
@@ -332,8 +356,8 @@ int main()
             {
                 scanf("%d", newDimensions + j);
             }
-            reshape(matrix1, dimensions, newDimensions, dimensionCount, newDimensionCount);
-            reshape(matrix2, dimensions, newDimensions, dimensionCount, newDimensionCount);
+            reshape(&matrix1, dimensions, newDimensions, dimensionCount, newDimensionCount);
+            reshape(&matrix2, dimensions, newDimensions, dimensionCount, newDimensionCount);
             free(dimensions);
             dimensions = newDimensions;
             dimensionCount = newDimensionCount;

@@ -1,1 +1,4 @@
 *.out
+problem/*
+*.txt
+*.zip
