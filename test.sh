@@ -17,19 +17,17 @@ do
         total=$((total * random_number))
         echo -n "$random_number " >> "./problem/in/input$i.txt"
     done
-    echo -e "\n" >> "./problem/in/input$i.txt"
     for ((j=1; j<=total; j++))
     do
         random_number=$((RANDOM % 100))
         echo -n "$random_number " >> "./problem/in/input$i.txt"
     done
-    echo -e "\n" >> "./problem/in/input$i.txt"
+    echo -e "" >> "./problem/in/input$i.txt"
     for ((j=1; j<=total; j++))
     do
         random_number=$((RANDOM % 100))
         echo -n "$random_number " >> "./problem/in/input$i.txt"
     done
-    echo -e "\n" >> "./problem/in/input$i.txt"
     operation=$((RANDOM % 10 + 1))
     echo "$operation" >> "./problem/in/input$i.txt"
     for ((j=1; j<=operation; j++))
